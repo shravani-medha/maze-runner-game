@@ -1,201 +1,232 @@
 import pygame
-import math
 import random
+import math
+import time
 
-# ===================== SETTINGS =====================
-CELL = 24
-GRID_W = 50
-GRID_H = 30
-WIDTH  = GRID_W * CELL
-HEIGHT = GRID_H * CELL + 70
+# ======================================================
+# SETTINGS
+# ======================================================
+CELL = 22
+GRID_W = 36
+GRID_H = 22
+WIDTH = GRID_W * CELL
+HEIGHT = GRID_H * CELL + 60
 FPS = 30
 
-COLOR_BG     = (0, 0, 0)
-COLOR_WALL   = (40, 40, 40)
-COLOR_FLOOR  = (10, 10, 10)
-
-SAFE_DIST = 6         # HOD fear radius
-BOOST_TIME = 240      # frames (~8 sec)
-COUNTDOWN_FRAMES = 90 # 3 seconds
+# Colors
+COLOR_BG = (20, 20, 20)          # Dark background
+COLOR_WALL = (60, 60, 60)        # Grey walls
+COLOR_PATH = (0, 0, 0)           # Maze floor
+COLOR_TEXT = (255, 255, 255)
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("SHRAVANI MEDHA PROJECT")
 clock = pygame.time.Clock()
-font = pygame.font.SysFont(None, 38)
+pygame.display.set_caption("Shravani Medha Maze Game")
+font = pygame.font.SysFont("Arial", 34)
 
-# ===================== MAZE =====================
-def empty_maze():
-    maze = [[0 for _ in range(GRID_W)] for _ in range(GRID_H)]
-    # Border walls
-    for x in range(GRID_W):
-        maze[0][x] = 1
-        maze[GRID_H-1][x] = 1
-    for y in range(GRID_H):
-        maze[y][0] = 1
-        maze[y][GRID_W-1] = 1
+# ======================================================
+# IMAGE LOAD
+# ======================================================
+girl_img  = pygame.transform.scale(pygame.image.load("girl.png"),   (CELL, CELL))
+boy_img   = pygame.transform.scale(pygame.image.load("boy.png"),    (CELL, CELL))
+hod_img   = pygame.transform.scale(pygame.image.load("hod.png"),    (CELL, CELL))
+gate_img  = pygame.transform.scale(pygame.image.load("gate.png"),   (CELL, CELL))
+boost_img = pygame.transform.scale(pygame.image.load("boost.png"),  (CELL, CELL))
+boost2_img= pygame.transform.scale(pygame.image.load("boost1.png"), (CELL, CELL))
+
+# ======================================================
+# BASIC MAZE GENERATOR (binary recursive)
+# ======================================================
+def generate_maze(w, h):
+    maze = [[1 for _ in range(w)] for _ in range(h)]
+
+    def carve(cx, cy):
+        dirs = [(1,0),(-1,0),(0,1),(0,-1)]
+        random.shuffle(dirs)
+        for dx,dy in dirs:
+            nx = cx + dx*2
+            ny = cy + dy*2
+            if 2 <= nx < w-2 and 2 <= ny < h-2 and maze[ny][nx] == 1:
+                maze[cy+dy][cx+dx] = 0
+                maze[ny][nx] = 0
+                carve(nx, ny)
+
+    maze[1][1] = 0
+    carve(1,1)
+
     return maze
 
-maze = empty_maze()
+maze = generate_maze(GRID_W, GRID_H)
 
-# ===================== GAME OBJECTS =====================
-runner_pos  = [1, 1]                  # Girl
-hod_pos     = [GRID_W-2, 1]           # Protector
-boy1_pos    = [1, GRID_H-2]           # Chaser
-boy2_pos    = [GRID_W-2, GRID_H-2]    # Chaser
-chasers     = [boy1_pos, boy2_pos]
+# ======================================================
+# GAME ENTITIES
+# ======================================================
 
-gate_pos = [GRID_W//2, GRID_H//2]
-maze[gate_pos[1]][gate_pos[0]] = 0
+# Corners:
+runner = [1, 1]                       # Top-left corner
+catchers = [
+    [GRID_W-2, 1],                    # Top-right
+    [1, GRID_H-2],                    # Bottom-left
+    [GRID_W-2, GRID_H-2],             # Bottom-right
+]
 
-# random boost positions
+# HOD (center area)
+hod = [GRID_W//2, GRID_H//2]
+
+# Gate = exact center
+gate = hod[:]
+
+# Boosts
 boosts = [
-    [GRID_W//3, GRID_H//2],
-    [GRID_W//2, GRID_H//3],
-    [GRID_W//2, GRID_H - GRID_H//3]
+    [GRID_W//2 - 4, GRID_H//2],
+    [GRID_W//2 + 4, GRID_H//2],
 ]
 
-boosts2 = [  # second type
-    [GRID_W - GRID_W//3, GRID_H//2],
-]
-
-# ===================== IMAGES =====================
-runner_img = pygame.transform.scale(pygame.image.load("girl.png"),  (CELL, CELL))
-boy_img    = pygame.transform.scale(pygame.image.load("boy.png"),   (CELL, CELL))
-hod_img    = pygame.transform.scale(pygame.image.load("hod.png"),   (CELL, CELL))
-gate_img   = pygame.transform.scale(pygame.image.load("gate.png"),  (CELL, CELL))
-boost_img  = pygame.transform.scale(pygame.image.load("boost.png"), (CELL, CELL))
-boost2_img = pygame.transform.scale(pygame.image.load("boost1.png"), (CELL, CELL))
-
-# ===================== GAME VARS =====================
-pulse = 0
-speed = 1
+runner_speed = 1
 boost_timer = 0
-game_started = False
-countdown = COUNTDOWN_FRAMES
+countdown_done = False
 
-# ===================== MOVEMENT HELPERS =====================
+# ======================================================
+# HOD SAFETY LOGIC
+# ======================================================
+def distance(a, b):
+    return abs(a[0]-b[0]) + abs(a[1]-b[1])
+
+# ======================================================
+# A SIMPLE MOVE
+# ======================================================
 def try_move(pos, dx, dy):
-    nx = pos[0] + dx
-    ny = pos[1] + dy
-    if 0 <= nx < GRID_W and 0 <= ny < GRID_H and maze[ny][nx] == 0:
-        return [nx, ny]
+    x = pos[0] + dx
+    y = pos[1] + dy
+    if 0 <= x < GRID_W and 0 <= y < GRID_H and maze[y][x] == 0:
+        return [x,y]
     return pos
 
-def move_toward(src, dst):
-    dx = 1 if src[0] < dst[0] else -1 if src[0] > dst[0] else 0
-    dy = 1 if src[1] < dst[1] else -1 if src[1] > dst[1] else 0
-    if abs(src[0] - dst[0]) > abs(src[1] - dst[1]):
-        return try_move(src, dx, 0)
-    return try_move(src, 0, dy)
-
-def move_away(src, enemy):
-    dx = -1 if src[0] < enemy[0] else 1 if src[0] > enemy[0] else 0
-    dy = -1 if src[1] < enemy[1] else 1 if src[1] > enemy[1] else 0
-    if abs(src[0]-enemy[0]) > abs(src[1]-enemy[1]):
-        return try_move(src, dx, 0)
-    return try_move(src, 0, dy)
+# ======================================================
+# SMART CHASE (simple greedy)
+# ======================================================
+def move_to_target(c, target):
+    cx, cy = c
+    tx, ty = target
+    dx, dy = 0,0
+    if abs(cx-tx) > abs(cy-ty):
+        dx = 1 if tx>cx else -1
+    else:
+        dy = 1 if ty>cy else -1
+    return try_move(c,dx,dy)
 
 # ======================================================
-#                     MAIN LOOP
+# RUN GAME
 # ======================================================
 running = True
+start_time = pygame.time.get_ticks()
+
+# -------------- COUNTDOWN -----------------
+for i in [3,2,1]:
+    screen.fill(COLOR_BG)
+    txt = font.render(str(i), True, (255,255,255))
+    screen.blit(txt, (WIDTH//2 - txt.get_width()//2, HEIGHT//2))
+    pygame.display.flip()
+    time.sleep(1)
+
+countdown_done = True
+start_game_time = time.time()
+
+# ======================================================
+# GAME LOOP
+# ======================================================
 while running:
     clock.tick(FPS)
-    pulse += 0.05
-
-    for e in pygame.event.get():
-        if e.type == pygame.QUIT:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
             running = False
 
-    # ================= COUNTDOWN =================
-    if not game_started:
-        screen.fill(COLOR_BG)
-        countdown -= 1
-        num = (countdown // 30) + 1
-        text = font.render(str(num), True, (255,255,255))
-        screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2))
-        pygame.display.flip()
-        if countdown <= 0:
-            game_started = True
-        continue
+    # ---------------- PLAYER MOVE ----------------
+    k = pygame.key.get_pressed()
+    dx = (k[pygame.K_RIGHT] - k[pygame.K_LEFT]) * runner_speed
+    dy = (k[pygame.K_DOWN]  - k[pygame.K_UP])   * runner_speed
 
-    # ================= PLAYER =================
-    keys = pygame.key.get_pressed()
-    dx = keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]
-    dy = keys[pygame.K_DOWN]  - keys[pygame.K_UP]
-    if dx or dy:
-        runner_pos = try_move(runner_pos, dx*speed, dy*speed)
+    runner = try_move(runner, dx, dy)
 
-    # ================= BOOST PICKUP =================
+    # ---------------- BOOST PICKUP ---------------
     for b in boosts[:]:
-        if runner_pos == b:
-            speed = 2
-            boost_timer = BOOST_TIME
+        if runner == b:
+            runner_speed = 2
+            boost_timer = 180
             boosts.remove(b)
-
-    for b in boosts2[:]:
-        if runner_pos == b:
-            speed = 3
-            boost_timer = BOOST_TIME * 1.5
-            boosts2.remove(b)
 
     if boost_timer > 0:
         boost_timer -= 1
         if boost_timer <= 0:
-            speed = 1
+            runner_speed = 1
 
-    # ================= AI =================
-    for i,c in enumerate(chasers):
-        dist_hod    = math.dist(c, hod_pos)
-        dist_runner = math.dist(c, runner_pos)
-
-        if dist_hod < SAFE_DIST:
-            chasers[i] = move_away(c, hod_pos)
+    # ---------------- AI MOVE --------------------
+    new_catchers = []
+    for c in catchers:
+        # If boy is CLOSE to HOD => run away
+        if distance(c, hod) <= 3:
+            # opposite direction
+            dx = 1 if c[0] < hod[0] else -1
+            dy = 1 if c[1] < hod[1] else -1
+            new_catchers.append(try_move(c, -dx, -dy))
         else:
-            chasers[i] = move_toward(c, runner_pos)
+            new_catchers.append(move_to_target(c, runner))
+    catchers = new_catchers
 
-    # ================= CHECK WIN / LOSE =================
-    if runner_pos == gate_pos:
-        print("🏆 YOU WIN!")
+    # ---------------- HOD DOESN’T MOVE ----------------
+
+    # ---------------- WIN/LOSE ------------------------
+    if runner == gate:
+        print("YOU WIN!")
         running = False
 
-    for c in chasers:
-        if runner_pos == c:
-            print("💀 CAUGHT — GAME OVER")
+    for c in catchers:
+        if c == runner:
+            print("CAUGHT!")
             running = False
 
-    # ================= DRAW =================
+    # =================================================
+    # DRAW
+    # =================================================
     screen.fill(COLOR_BG)
 
-    # Title neon pulse
-    r = int((math.sin(pulse) + 1) * 120)
-    g = int((math.sin(pulse+1.5) + 1) * 120)
-    b = int((math.sin(pulse+3) + 1) * 140)
-    title = font.render("SHRAVANI MEDHA PROJECT", True,(r,g,b))
+    # Animated Title
+    t = pygame.time.get_ticks() / 500
+    r = int((math.sin(t)+1)*120)
+    g = int((math.sin(t+2)+1)*120)
+    b = int((math.sin(t+4)+1)*120)
+    color_title = (r,g,b)
+    title = font.render("SHRAVANI MEDHA PROJECT", True, color_title)
     screen.blit(title,(WIDTH//2-title.get_width()//2,10))
 
-    # Maze blocks
+    # Maze
     for y in range(GRID_H):
         for x in range(GRID_W):
-            pygame.draw.rect(
-                screen,
-                COLOR_WALL if maze[y][x] == 1 else COLOR_FLOOR,
-                (x*CELL, y*CELL+70, CELL, CELL)
-            )
+            color = COLOR_WALL if maze[y][x]==1 else COLOR_PATH
+            pygame.draw.rect(screen, color,(x*CELL, y*CELL+60, CELL,CELL))
 
-    # Objects
-    screen.blit(gate_img, (gate_pos[0]*CELL, gate_pos[1]*CELL+70))
-    screen.blit(runner_img, (runner_pos[0]*CELL, runner_pos[1]*CELL+70))
-    screen.blit(hod_img, (hod_pos[0]*CELL, hod_pos[1]*CELL+70))
-
-    for c in chasers:
-        screen.blit(boy_img, (c[0]*CELL, c[1]*CELL+70))
-
+    # Boosts
     for b in boosts:
-        screen.blit(boost_img, (b[0]*CELL, b[1]*CELL+70))
-    for b in boosts2:
-        screen.blit(boost2_img, (b[0]*CELL, b[1]*CELL+70))
+        screen.blit(boost_img,(b[0]*CELL, b[1]*CELL+60))
+
+    # gate
+    screen.blit(gate_img,(gate[0]*CELL, gate[1]*CELL+60))
+
+    # Player
+    screen.blit(girl_img,(runner[0]*CELL, runner[1]*CELL+60))
+
+    # HOD
+    screen.blit(hod_img,(hod[0]*CELL, hod[1]*CELL+60))
+
+    # Catchers
+    for c in catchers:
+        screen.blit(boy_img,(c[0]*CELL, c[1]*CELL+60))
+
+    # Timer HUD
+    elapsed = int(time.time()-start_game_time)
+    hud = font.render(f"Time: {elapsed}", True, COLOR_TEXT)
+    screen.blit(hud, (10,10))
 
     pygame.display.flip()
 
