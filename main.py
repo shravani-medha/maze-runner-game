@@ -19,37 +19,50 @@ COLOR_RUNNER = (0, 255, 0)      # Green
 COLOR_CATCHER = (255, 0, 0)     # Red
 COLOR_BOOST = (255, 255, 0)     # Yellow
 
-# --- Maze generation (3 main routes) ---
+# --- Maze generation ---
 def generate_maze():
     maze = [[1 for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
-    # carve 3 main routes
     for y in range(1, GRID_HEIGHT-1):
         for x in range(1, GRID_WIDTH-1):
-            maze[y][x] = 0 if random.random() > 0.3 else 1
+            maze[y][x] = 0 if random.random() > 0.35 else 1
     return maze
 
 maze = generate_maze()
 
-# --- Define start, gate, and risky path ---
+# --- Runner and gate ---
 runner_pos = [1, 1]
 gate_pos = [GRID_WIDTH-2, GRID_HEIGHT-2]
-catcher_pos = [1, GRID_HEIGHT//2]  # risky path start
 
-# Predefine risky path (catcher path) as vertical middle line
-risky_path = [[GRID_WIDTH//2, y] for y in range(1, GRID_HEIGHT-1)]
-for pos in risky_path:
-    maze[pos[1]][pos[0]] = 0  # clear path for catcher
+# --- Define 3 risky paths for catchers ---
+catcher_paths = [
+    [[GRID_WIDTH//4, y] for y in range(1, GRID_HEIGHT-1)],  # left vertical
+    [[GRID_WIDTH//2, y] for y in range(1, GRID_HEIGHT-1)],  # middle vertical
+    [[3*GRID_WIDTH//4, y] for y in range(1, GRID_HEIGHT-1)] # right vertical
+]
+catchers = [path[0][:] for path in catcher_paths]
+catcher_indices = [0, 0, 0]
 
-# Speed boosters (strategically placed near forks)
-boosters = [[GRID_WIDTH//4, GRID_HEIGHT//4], [3*GRID_WIDTH//4, GRID_HEIGHT//4], [GRID_WIDTH//2, 3*GRID_HEIGHT//4]]
+# Clear risky paths in maze
+for path in catcher_paths:
+    for pos in path:
+        maze[pos[1]][pos[0]] = 0
+
+# --- Speed boosters ---
+boosters = [
+    [GRID_WIDTH//6, GRID_HEIGHT//6],
+    [5*GRID_WIDTH//6, GRID_HEIGHT//6],
+    [GRID_WIDTH//2, GRID_HEIGHT//3],
+    [GRID_WIDTH//3, 2*GRID_HEIGHT//3],
+    [2*GRID_WIDTH//3, 5*GRID_HEIGHT//6]
+]
 
 # Ensure gate path is clear
 maze[gate_pos[1]][gate_pos[0]] = 0
 
-# --- Pygame initialization ---
+# --- Pygame init ---
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Ultimate Brain Maze")
+pygame.display.set_caption("Ultimate Brain Maze 3 Catchers")
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 36)
 
@@ -57,7 +70,6 @@ font = pygame.font.SysFont(None, 36)
 runner_speed = 1
 boost_active = False
 boost_timer = 0
-catcher_index = 0
 pulse_counter = 0
 
 # --- Main loop ---
@@ -83,9 +95,11 @@ while running:
     if 0 <= new_x < GRID_WIDTH and 0 <= new_y < GRID_HEIGHT and maze[new_y][new_x] == 0:
         runner_pos = [new_x, new_y]
 
-    # --- Catcher AI along risky path ---
-    catcher_pos = risky_path[catcher_index]
-    catcher_index = (catcher_index + 1) % len(risky_path)
+    # --- Catchers movement ---
+    for i in range(3):
+        path = catcher_paths[i]
+        catchers[i] = path[catcher_indices[i]]
+        catcher_indices[i] = (catcher_indices[i] + 1) % len(path)
 
     # --- Check booster pickup ---
     for b in boosters[:]:
@@ -101,18 +115,19 @@ while running:
             boost_active = False
             runner_speed = 1
 
-    # --- Check for win/lose ---
+    # --- Check win/lose ---
     if runner_pos == gate_pos:
         print("You Win!")
         running = False
-    if runner_pos == catcher_pos:
-        print("Caught! Game Over.")
-        running = False
+    for c in catchers:
+        if runner_pos == c:
+            print("Caught! Game Over.")
+            running = False
 
     # --- Drawing ---
     screen.fill(COLOR_PATH_BG)
 
-    # Draw pulsing title
+    # Pulsing title
     r = int((math.sin(pulse_counter) + 1) * 127)
     g = int((math.sin(pulse_counter + 2) + 1) * 127)
     b = int((math.sin(pulse_counter + 4) + 1) * 127)
@@ -120,7 +135,7 @@ while running:
     title_text = font.render("SHRAVANI MEDHA PROJECT", True, title_color)
     screen.blit(title_text, (WIDTH//2 - title_text.get_width()//2, 5))
 
-    # Draw maze (shifted down by 40 for title)
+    # Draw maze
     for y in range(GRID_HEIGHT):
         for x in range(GRID_WIDTH):
             rect = pygame.Rect(x*CELL_SIZE, y*CELL_SIZE + 40, CELL_SIZE, CELL_SIZE)
@@ -139,8 +154,9 @@ while running:
     # Draw runner
     pygame.draw.rect(screen, COLOR_RUNNER, (runner_pos[0]*CELL_SIZE, runner_pos[1]*CELL_SIZE + 40, CELL_SIZE, CELL_SIZE))
 
-    # Draw catcher
-    pygame.draw.rect(screen, COLOR_CATCHER, (catcher_pos[0]*CELL_SIZE, catcher_pos[1]*CELL_SIZE + 40, CELL_SIZE, CELL_SIZE))
+    # Draw catchers
+    for c in catchers:
+        pygame.draw.rect(screen, COLOR_CATCHER, (c[0]*CELL_SIZE, c[1]*CELL_SIZE + 40, CELL_SIZE, CELL_SIZE))
 
     pygame.display.flip()
 
