@@ -31,11 +31,11 @@ BOOST_DURATION = 4.0    # seconds
 RUNNER_BASE_SPEED_TILES = 4.0   # tiles per second (movement speed)
 # Catcher should be 1/4th of runner -> below we'll compute dynamically
 
-# Colors
-COLOR_WALL = (8, 10, 13)
-COLOR_PATH_BG = (18, 130, 255)  # outer path color to match earlier look
-COLOR_PATH_FILL = (0, 0, 0)
-COLOR_GATE = (16, 185, 129)     # green for exit gate
+# Colors for the game
+COLOR_WALL = (135, 206, 235)   # Sky Blue
+COLOR_PATH_FILL = (0, 0, 0)    # Black (path inside)
+COLOR_PATH_BG = (255, 255, 255) # White (outer path/background)
+COLOR_GATE = (128, 0, 128)     # Purple
 
 # ---------------- UTILITIES ----------------
 def oddify(n):
