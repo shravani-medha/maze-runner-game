@@ -33,20 +33,6 @@ maze = generate_maze()
 runner_pos = [1, 1]
 gate_pos = [GRID_WIDTH-2, GRID_HEIGHT-2]
 
-# --- Define 3 risky paths for catchers ---
-catcher_paths = [
-    [[GRID_WIDTH//4, y] for y in range(1, GRID_HEIGHT-1)],  # left vertical
-    [[GRID_WIDTH//2, y] for y in range(1, GRID_HEIGHT-1)],  # middle vertical
-    [[3*GRID_WIDTH//4, y] for y in range(1, GRID_HEIGHT-1)] # right vertical
-]
-catchers = [path[0][:] for path in catcher_paths]
-catcher_indices = [0, 0, 0]
-
-# Clear risky paths in maze
-for path in catcher_paths:
-    for pos in path:
-        maze[pos[1]][pos[0]] = 0
-
 # --- Speed boosters ---
 boosters = [
     [GRID_WIDTH//6, GRID_HEIGHT//6],
@@ -72,6 +58,39 @@ boost_active = False
 boost_timer = 0
 pulse_counter = 0
 
+# --- Catchers initial positions ---
+catchers = [[GRID_WIDTH//4, GRID_HEIGHT//4], [GRID_WIDTH//2, GRID_HEIGHT//2], [3*GRID_WIDTH//4, GRID_HEIGHT//4]]
+
+# --- Function: move catcher toward runner ---
+def move_toward_runner(catcher_pos, runner_pos, maze):
+    x, y = catcher_pos
+    rx, ry = runner_pos
+    dx, dy = 0, 0
+
+    if abs(x - rx) > abs(y - ry):
+        if x < rx and maze[y][x+1] == 0:
+            dx = 1
+        elif x > rx and maze[y][x-1] == 0:
+            dx = -1
+    else:
+        if y < ry and maze[y+1][x] == 0:
+            dy = 1
+        elif y > ry and maze[y-1][x] == 0:
+            dy = -1
+
+    # Check if next move blocked by wall; try alternate direction
+    if maze[y+dy][x+dx] == 1:
+        if dx != 0 and y < ry and maze[y+1][x] == 0:
+            dx, dy = 0, 1
+        elif dx != 0 and y > ry and maze[y-1][x] == 0:
+            dx, dy = 0, -1
+        elif dy != 0 and x < rx and maze[y][x+1] == 0:
+            dx, dy = 1, 0
+        elif dy != 0 and x > rx and maze[y][x-1] == 0:
+            dx, dy = -1, 0
+
+    return [x+dx, y+dy]
+
 # --- Main loop ---
 running = True
 while running:
@@ -95,11 +114,9 @@ while running:
     if 0 <= new_x < GRID_WIDTH and 0 <= new_y < GRID_HEIGHT and maze[new_y][new_x] == 0:
         runner_pos = [new_x, new_y]
 
-    # --- Catchers movement ---
+    # --- Move catchers toward runner ---
     for i in range(3):
-        path = catcher_paths[i]
-        catchers[i] = path[catcher_indices[i]]
-        catcher_indices[i] = (catcher_indices[i] + 1) % len(path)
+        catchers[i] = move_toward_runner(catchers[i], runner_pos, maze)
 
     # --- Check booster pickup ---
     for b in boosters[:]:
