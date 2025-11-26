@@ -1,195 +1,214 @@
-import pygame
-import random
-import sys
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maze Runner</title>
+<style>
+    body { margin: 0; background: #fff; font-family: sans-serif; }
+    canvas { display: block; margin: auto; background: #eee; }
+    #info { text-align: center; font-size: 20px; margin: 10px; }
+    button { font-size: 18px; margin: 10px; padding: 10px 20px; }
+</style>
+</head>
+<body>
+<div id="info">Lives: 3 | Score: 0</div>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<button id="restartBtn">Restart Game</button>
 
-# Initialize Pygame
-pygame.init()
+<script>
+// --- Canvas Setup ---
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
 
-# Screen settings
-WIDTH, HEIGHT = 800, 600
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Maze Runner")
+// --- Game Settings ---
+const TILE_SIZE = 40;
+const PLAYER_SPEED = 4;
+const ENEMY_SPEED = 4;
+const MAX_LIVES = 3;
 
-# Colors
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
+// --- Sprites ---
+const playerImg = new Image();
+playerImg.src = "boy.png";  // use your sprite
+const enemyImg = new Image();
+enemyImg.src = "hod.png";    // enemy sprite
 
-# Load sprites
-player_sprites = [pygame.image.load("boy.png"), pygame.image.load("girl.png")]
-enemy_sprite = pygame.image.load("hod.png")
+// --- Sounds ---
+const eatSound = new Audio("eat.wav");
+const hitSound = new Audio("hit.wav");
+const winSound = new Audio("win.wav");
+const bgm = new Audio("bgm.mp3");
+bgm.loop = true;
+bgm.play().catch(()=>{});  // play if allowed
 
-# Load sounds
-eat_sound = pygame.mixer.Sound("eat.wav")
-hit_sound = pygame.mixer.Sound("hit.wav")
-win_sound = pygame.mixer.Sound("win.wav")
-
-# Background music
-try:
-    pygame.mixer.music.load("bgm.mp3")
-    pygame.mixer.music.play(-1)
-except:
-    print("Background music not found.")
-
-# Game settings
-TILE_SIZE = 40
-PLAYER_SPEED = 4
-ENEMY_SPEED = 4
-FPS = 60
-MAX_LIVES = 3
-
-# Levels (0 = empty, 1 = wall, 2 = pellet)
-LEVELS = [
-    [
-        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-        [1,2,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,2,0,1],
-        [1,0,1,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1,0,1],
-        [1,0,1,0,0,0,0,0,2,0,0,0,0,0,0,1,0,0,0,1],
-        [1,0,1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,1,0,1],
-        [1,0,0,0,0,0,2,0,0,0,2,0,0,0,0,0,0,0,0,1],
-        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
-    ],
-    # Add more levels here
+// --- Levels (0=empty, 1=wall, 2=pellet) ---
+const LEVELS = [
+[
+[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+[1,2,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,2,0,1],
+[1,0,1,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1,0,1],
+[1,0,1,0,0,0,0,0,2,0,0,0,0,0,0,1,0,0,0,1],
+[1,0,1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,1,0,1],
+[1,0,0,0,0,0,2,0,0,0,2,0,0,0,0,0,0,0,0,1],
+[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 ]
+];
 
-current_level = 0
-maze = LEVELS[current_level]
+// --- Game Variables ---
+let currentLevel = 0;
+let maze = LEVELS[currentLevel].map(r => r.slice());
+let lives = MAX_LIVES;
+let score = 0;
 
-# Helper functions
-def draw_maze(maze):
-    for y, row in enumerate(maze):
-        for x, tile in enumerate(row):
-            rect = pygame.Rect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE)
-            if tile == 1:
-                pygame.draw.rect(screen, BLACK, rect)
-            elif tile == 2:
-                pygame.draw.circle(screen, GREEN, rect.center, 5)
+const player = { x: TILE_SIZE, y: TILE_SIZE, width: TILE_SIZE, height: TILE_SIZE };
+const enemy = { x: canvas.width - TILE_SIZE*2, y: canvas.height - TILE_SIZE*2, width: TILE_SIZE, height: TILE_SIZE };
 
-def get_tile(pos):
-    x, y = pos
-    return maze[y // TILE_SIZE][x // TILE_SIZE]
+// --- Input ---
+const keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
 
-def set_tile(pos, value):
-    x, y = pos
-    maze[y // TILE_SIZE][x // TILE_SIZE] = value
+// Touch controls
+let touchStart = null;
+canvas.addEventListener("touchstart", e => {
+    const t = e.touches[0];
+    touchStart = { x: t.clientX, y: t.clientY };
+});
+canvas.addEventListener("touchmove", e => {
+    if(!touchStart) return;
+    const t = e.touches[0];
+    const dx = t.clientX - touchStart.x;
+    const dy = t.clientY - touchStart.y;
+    if(Math.abs(dx) > Math.abs(dy)){
+        keys['ArrowRight'] = dx>0;
+        keys['ArrowLeft'] = dx<0;
+    } else {
+        keys['ArrowDown'] = dy>0;
+        keys['ArrowUp'] = dy<0;
+    }
+});
+canvas.addEventListener("touchend", e => { 
+    keys['ArrowUp']=keys['ArrowDown']=keys['ArrowLeft']=keys['ArrowRight']=false; 
+    touchStart=null;
+});
 
-# Player class
-class Player:
-    def __init__(self):
-        self.image = player_sprites[0]  # Default sprite
-        self.rect = self.image.get_rect()
-        self.rect.topleft = (TILE_SIZE, TILE_SIZE)
-        self.lives = MAX_LIVES
-        self.score = 0
+// --- Helper Functions ---
+function drawMaze(){
+    for(let y=0; y<maze.length; y++){
+        for(let x=0; x<maze[y].length; x++){
+            const tile = maze[y][x];
+            if(tile===1){
+                ctx.fillStyle="black";
+                ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            } else if(tile===2){
+                ctx.fillStyle="green";
+                ctx.beginPath();
+                ctx.arc(x*TILE_SIZE+TILE_SIZE/2, y*TILE_SIZE+TILE_SIZE/2, 5,0,Math.PI*2);
+                ctx.fill();
+            }
+        }
+    }
+}
 
-    def move(self, dx, dy):
-        new_rect = self.rect.move(dx, dy)
-        if not self.collide(new_rect):
-            self.rect = new_rect
-            if get_tile(self.rect.center) == 2:
-                set_tile(self.rect.center, 0)
-                self.score += 1
-                eat_sound.play()
+function collideRect(a, b){
+    return !(a.x + a.width < b.x || a.x > b.x + b.width || a.y + a.height < b.y || a.y > b.y + b.height);
+}
 
-    def collide(self, rect):
-        x1 = rect.left // TILE_SIZE
-        y1 = rect.top // TILE_SIZE
-        x2 = rect.right // TILE_SIZE
-        y2 = rect.bottom // TILE_SIZE
-        for y in range(y1, y2+1):
-            for x in range(x1, x2+1):
-                if y < 0 or y >= len(maze) or x < 0 or x >= len(maze[0]):
-                    return True
-                if maze[y][x] == 1:
-                    return True
-        return False
+function getTileAt(px, py){
+    const x = Math.floor(px / TILE_SIZE);
+    const y = Math.floor(py / TILE_SIZE);
+    return maze[y] && maze[y][x];
+}
 
-    def draw(self):
-        screen.blit(self.image, self.rect.topleft)
+function setTileAt(px, py, val){
+    const x = Math.floor(px / TILE_SIZE);
+    const y = Math.floor(py / TILE_SIZE);
+    if(maze[y] && maze[y][x] !== undefined) maze[y][x]=val;
+}
 
-# Enemy class
-class Enemy:
-    def __init__(self):
-        self.image = enemy_sprite
-        self.rect = self.image.get_rect()
-        self.rect.topleft = (WIDTH - TILE_SIZE*2, HEIGHT - TILE_SIZE*2)
+// --- Game Loop ---
+function update(){
+    // Move player
+    let dx=0, dy=0;
+    if(keys['ArrowLeft']) dx=-PLAYER_SPEED;
+    if(keys['ArrowRight']) dx=PLAYER_SPEED;
+    if(keys['ArrowUp']) dy=-PLAYER_SPEED;
+    if(keys['ArrowDown']) dy=PLAYER_SPEED;
 
-    def move_towards(self, target):
-        dx = dy = 0
-        if self.rect.x < target.rect.x: dx = ENEMY_SPEED
-        elif self.rect.x > target.rect.x: dx = -ENEMY_SPEED
-        if self.rect.y < target.rect.y: dy = ENEMY_SPEED
-        elif self.rect.y > target.rect.y: dy = -ENEMY_SPEED
-        new_rect = self.rect.move(dx, dy)
-        if not player.collide(new_rect):
-            self.rect = new_rect
+    let newPlayer = { ...player, x: player.x+dx, y: player.y+dy };
+    // collision with walls
+    if(getTileAt(newPlayer.x, newPlayer.y)==1 || getTileAt(newPlayer.x+player.width-1, newPlayer.y)==1 ||
+       getTileAt(newPlayer.x, newPlayer.y+player.height-1)==1 || getTileAt(newPlayer.x+player.width-1, newPlayer.y+player.height-1)==1){
+        // cannot move
+    } else player.x+=dx, player.y+=dy;
 
-    def draw(self):
-        screen.blit(self.image, self.rect.topleft)
+    // collect pellets
+    if(getTileAt(player.x+player.width/2, player.y+player.height/2)===2){
+        setTileAt(player.x+player.width/2, player.y+player.height/2,0);
+        score++;
+        eatSound.play();
+    }
 
-# Game loop
-player = Player()
-enemy = Enemy()
-clock = pygame.time.Clock()
+    // Move enemy towards player
+    if(enemy.x < player.x) enemy.x += ENEMY_SPEED;
+    if(enemy.x > player.x) enemy.x -= ENEMY_SPEED;
+    if(enemy.y < player.y) enemy.y += ENEMY_SPEED;
+    if(enemy.y > player.y) enemy.y -= ENEMY_SPEED;
 
-font = pygame.font.SysFont(None, 36)
+    // Collision with enemy
+    if(collideRect(player, enemy)){
+        lives--;
+        hitSound.play();
+        player.x = TILE_SIZE; player.y = TILE_SIZE;
+        enemy.x = canvas.width - TILE_SIZE*2; enemy.y = canvas.height - TILE_SIZE*2;
+        if(lives<=0){
+            alert("GAME OVER");
+            resetGame();
+        }
+    }
 
-def show_text(text, pos, color=RED):
-    img = font.render(text, True, color)
-    screen.blit(img, pos)
+    // Check if all pellets eaten
+    if(maze.flat().every(t=>t!==2)){
+        winSound.play();
+        currentLevel++;
+        if(currentLevel<LEVELS.length){
+            maze = LEVELS[currentLevel].map(r=>r.slice());
+            player.x = TILE_SIZE; player.y = TILE_SIZE;
+            enemy.x = canvas.width - TILE_SIZE*2; enemy.y = canvas.height - TILE_SIZE*2;
+        } else {
+            alert("YOU WIN!");
+            resetGame();
+        }
+    }
 
-running = True
-while running:
-    screen.fill(WHITE)
-    draw_maze(maze)
-    player.draw()
-    enemy.draw()
-    show_text(f"Lives: {player.lives} Score: {player.score}", (10, HEIGHT - 40))
+    // Draw everything
+    draw();
+    requestAnimationFrame(update);
+}
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
+function draw(){
+    ctx.fillStyle="white";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    drawMaze();
+    ctx.drawImage(playerImg, player.x, player.y, TILE_SIZE, TILE_SIZE);
+    ctx.drawImage(enemyImg, enemy.x, enemy.y, TILE_SIZE, TILE_SIZE);
+    document.getElementById("info").textContent=`Lives: ${lives} | Score: ${score}`;
+}
 
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_LEFT]:
-        player.move(-PLAYER_SPEED, 0)
-    if keys[pygame.K_RIGHT]:
-        player.move(PLAYER_SPEED, 0)
-    if keys[pygame.K_UP]:
-        player.move(0, -PLAYER_SPEED)
-    if keys[pygame.K_DOWN]:
-        player.move(0, PLAYER_SPEED)
+// Restart button
+function resetGame(){
+    lives=MAX_LIVES;
+    score=0;
+    currentLevel=0;
+    maze = LEVELS[currentLevel].map(r=>r.slice());
+    player.x=TILE_SIZE; player.y=TILE_SIZE;
+    enemy.x=canvas.width - TILE_SIZE*2; enemy.y=canvas.height - TILE_SIZE*2;
+}
 
-    enemy.move_towards(player)
+document.getElementById("restartBtn").addEventListener("click", resetGame);
 
-    if player.rect.colliderect(enemy.rect):
-        player.lives -= 1
-        hit_sound.play()
-        player.rect.topleft = (TILE_SIZE, TILE_SIZE)
-        enemy.rect.topleft = (WIDTH - TILE_SIZE*2, HEIGHT - TILE_SIZE*2)
-        if player.lives <= 0:
-            show_text("GAME OVER", (WIDTH//2 - 100, HEIGHT//2), RED)
-            pygame.display.flip()
-            pygame.time.wait(3000)
-            running = False
-
-    # Check if all pellets eaten
-    if all(2 not in row for row in maze):
-        win_sound.play()
-        current_level += 1
-        if current_level < len(LEVELS):
-            maze = LEVELS[current_level]
-            player.rect.topleft = (TILE_SIZE, TILE_SIZE)
-            enemy.rect.topleft = (WIDTH - TILE_SIZE*2, HEIGHT - TILE_SIZE*2)
-        else:
-            show_text("YOU WIN!", (WIDTH//2 - 100, HEIGHT//2), GREEN)
-            pygame.display.flip()
-            pygame.time.wait(3000)
-            running = False
-
-    pygame.display.flip()
-    clock.tick(FPS)
-
-pygame.quit()
-sys.exit()
+// Start game
+update();
+</script>
+</body>
+</html>
