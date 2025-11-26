@@ -4,11 +4,11 @@ import math
 
 # --- Settings ---
 CELL_SIZE = 20
-GRID_WIDTH = 30
+GRID_WIDTH = 15
 GRID_HEIGHT = 30
 WIDTH = CELL_SIZE * GRID_WIDTH
 HEIGHT = CELL_SIZE * GRID_HEIGHT + 40  # extra space for title
-FPS = 10
+FPS = 30
 
 # Colors
 COLOR_WALL = (135, 206, 235)    # Sky Blue
