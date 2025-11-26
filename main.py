@@ -1,183 +1,201 @@
 import pygame
-import random
 import math
+import random
 
-# ================= SETTINGS =================
-CELL_SIZE = 20
-GRID_WIDTH = 150
-GRID_HEIGHT = 30
-WIDTH = CELL_SIZE * GRID_WIDTH
-HEIGHT = CELL_SIZE * GRID_HEIGHT + 40
+# ===================== SETTINGS =====================
+CELL = 24
+GRID_W = 50
+GRID_H = 30
+WIDTH  = GRID_W * CELL
+HEIGHT = GRID_H * CELL + 70
 FPS = 30
 
-# Colors
-COLOR_WALL = (135, 206, 235)   # Sky Blue wall
-COLOR_PATH_FILL = (0, 0, 0)    # Path color
-COLOR_PATH_BG = (255, 255, 255)
+COLOR_BG     = (0, 0, 0)
+COLOR_WALL   = (40, 40, 40)
+COLOR_FLOOR  = (10, 10, 10)
 
-# ================ MAZE GENERATION ================
-def generate_circular_maze():
-    maze = [[1 for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
+SAFE_DIST = 6         # HOD fear radius
+BOOST_TIME = 240      # frames (~8 sec)
+COUNTDOWN_FRAMES = 90 # 3 seconds
 
-    cx = GRID_WIDTH // 2
-    cy = GRID_HEIGHT // 2
-    max_r = min(GRID_WIDTH, GRID_HEIGHT) // 2
-
-    for r in range(max_r):
-        # circular rings
-        for angle in range(0, 360, 5):
-            rad = math.radians(angle)
-            x = int(cx + r * math.cos(rad))
-            y = int(cy + r * math.sin(rad))
-            if 0 < x < GRID_WIDTH and 0 < y < GRID_HEIGHT:
-                maze[y][x] = 0
-
-        # radial spokes
-        if r % 3 == 0:
-            for a in range(0, 360, 45):
-                rad = math.radians(a)
-                x = int(cx + r * math.cos(rad))
-                y = int(cy + r * math.sin(rad))
-                if 0 < x < GRID_WIDTH and 0 < y < GRID_HEIGHT:
-                    maze[y][x] = 0
-
-    # clear center
-    for i in range(cy - 2, cy + 3):
-        for j in range(cx - 2, cx + 3):
-            maze[i][j] = 0
-
-    return maze
-
-maze = generate_circular_maze()
-
-# ================ PLAYER / OBJECT STARTS ================
-runner_pos = [GRID_WIDTH // 2, GRID_HEIGHT // 2]
-gate_pos = [GRID_WIDTH // 2, GRID_HEIGHT - 3]
-maze[gate_pos[1]][gate_pos[0]] = 0  # ensure exit path
-
-boosters = [
-    [GRID_WIDTH // 2 + 10, GRID_HEIGHT // 2],
-    [GRID_WIDTH // 2 - 10, GRID_HEIGHT // 2],
-    [GRID_WIDTH // 2, GRID_HEIGHT // 2 + 10],
-    [GRID_WIDTH // 2, GRID_HEIGHT // 2 - 10]
-]
-
-# Catchers
-catchers = [
-    [GRID_WIDTH // 2, GRID_HEIGHT // 2 - 5],  # HOD
-    [GRID_WIDTH // 2 + 5, GRID_HEIGHT // 2 + 5],  # boy
-    [GRID_WIDTH // 2 - 5, GRID_HEIGHT // 2 + 5]   # boy
-]
-
-# ================ GAME VARIABLES ================
-runner_speed = 1
-boost_active = False
-boost_timer = 0
-pulse_counter = 0
-
-# ================ PYGAME INIT & IMAGE LOAD ================
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Ultimate Brain Maze 3 Catchers")
+pygame.display.set_caption("SHRAVANI MEDHA PROJECT")
 clock = pygame.time.Clock()
-font = pygame.font.SysFont(None, 36)
+font = pygame.font.SysFont(None, 38)
 
-# --- Load images ---
-runner_img = pygame.transform.scale(pygame.image.load("girl.png"), (CELL_SIZE, CELL_SIZE))
-catcher1_img = pygame.transform.scale(pygame.image.load("hod.png"), (CELL_SIZE, CELL_SIZE))
-catcher_img = pygame.transform.scale(pygame.image.load("boy.png"), (CELL_SIZE, CELL_SIZE))
-boost_img = pygame.transform.scale(pygame.image.load("note.png"), (CELL_SIZE, CELL_SIZE))
-gate_img = pygame.transform.scale(pygame.image.load("gate.png"), (CELL_SIZE, CELL_SIZE))
+# ===================== MAZE =====================
+def empty_maze():
+    maze = [[0 for _ in range(GRID_W)] for _ in range(GRID_H)]
+    # Border walls
+    for x in range(GRID_W):
+        maze[0][x] = 1
+        maze[GRID_H-1][x] = 1
+    for y in range(GRID_H):
+        maze[y][0] = 1
+        maze[y][GRID_W-1] = 1
+    return maze
 
-# ================ MOVE CATCHERS ================
-def move_toward_runner(catcher_pos, runner_pos, maze):
-    x, y = catcher_pos
-    rx, ry = runner_pos
-    dx, dy = 0, 0
+maze = empty_maze()
 
-    if abs(x - rx) > abs(y - ry):
-        if x < rx and maze[y][x + 1] == 0: dx = 1
-        elif x > rx and maze[y][x - 1] == 0: dx = -1
-    else:
-        if y < ry and maze[y + 1][x] == 0: dy = 1
-        elif y > ry and maze[y - 1][x] == 0: dy = -1
+# ===================== GAME OBJECTS =====================
+runner_pos  = [1, 1]                  # Girl
+hod_pos     = [GRID_W-2, 1]           # Protector
+boy1_pos    = [1, GRID_H-2]           # Chaser
+boy2_pos    = [GRID_W-2, GRID_H-2]    # Chaser
+chasers     = [boy1_pos, boy2_pos]
 
-    return [x + dx, y + dy]
+gate_pos = [GRID_W//2, GRID_H//2]
+maze[gate_pos[1]][gate_pos[0]] = 0
 
-# ================ MAIN GAME LOOP ================
+# random boost positions
+boosts = [
+    [GRID_W//3, GRID_H//2],
+    [GRID_W//2, GRID_H//3],
+    [GRID_W//2, GRID_H - GRID_H//3]
+]
+
+boosts2 = [  # second type
+    [GRID_W - GRID_W//3, GRID_H//2],
+]
+
+# ===================== IMAGES =====================
+runner_img = pygame.transform.scale(pygame.image.load("girl.png"),  (CELL, CELL))
+boy_img    = pygame.transform.scale(pygame.image.load("boy.png"),   (CELL, CELL))
+hod_img    = pygame.transform.scale(pygame.image.load("hod.png"),   (CELL, CELL))
+gate_img   = pygame.transform.scale(pygame.image.load("gate.png"),  (CELL, CELL))
+boost_img  = pygame.transform.scale(pygame.image.load("boost.png"), (CELL, CELL))
+boost2_img = pygame.transform.scale(pygame.image.load("boost1.png"), (CELL, CELL))
+
+# ===================== GAME VARS =====================
+pulse = 0
+speed = 1
+boost_timer = 0
+game_started = False
+countdown = COUNTDOWN_FRAMES
+
+# ===================== MOVEMENT HELPERS =====================
+def try_move(pos, dx, dy):
+    nx = pos[0] + dx
+    ny = pos[1] + dy
+    if 0 <= nx < GRID_W and 0 <= ny < GRID_H and maze[ny][nx] == 0:
+        return [nx, ny]
+    return pos
+
+def move_toward(src, dst):
+    dx = 1 if src[0] < dst[0] else -1 if src[0] > dst[0] else 0
+    dy = 1 if src[1] < dst[1] else -1 if src[1] > dst[1] else 0
+    if abs(src[0] - dst[0]) > abs(src[1] - dst[1]):
+        return try_move(src, dx, 0)
+    return try_move(src, 0, dy)
+
+def move_away(src, enemy):
+    dx = -1 if src[0] < enemy[0] else 1 if src[0] > enemy[0] else 0
+    dy = -1 if src[1] < enemy[1] else 1 if src[1] > enemy[1] else 0
+    if abs(src[0]-enemy[0]) > abs(src[1]-enemy[1]):
+        return try_move(src, dx, 0)
+    return try_move(src, 0, dy)
+
+# ======================================================
+#                     MAIN LOOP
+# ======================================================
 running = True
 while running:
     clock.tick(FPS)
-    pulse_counter += 0.05
+    pulse += 0.05
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
+    for e in pygame.event.get():
+        if e.type == pygame.QUIT:
             running = False
 
-    # -------- Runner Movement --------
+    # ================= COUNTDOWN =================
+    if not game_started:
+        screen.fill(COLOR_BG)
+        countdown -= 1
+        num = (countdown // 30) + 1
+        text = font.render(str(num), True, (255,255,255))
+        screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2))
+        pygame.display.flip()
+        if countdown <= 0:
+            game_started = True
+        continue
+
+    # ================= PLAYER =================
     keys = pygame.key.get_pressed()
-    dx = (keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]) * runner_speed
-    dy = (keys[pygame.K_DOWN] - keys[pygame.K_UP]) * runner_speed
+    dx = keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]
+    dy = keys[pygame.K_DOWN]  - keys[pygame.K_UP]
+    if dx or dy:
+        runner_pos = try_move(runner_pos, dx*speed, dy*speed)
 
-    new_x = runner_pos[0] + dx
-    new_y = runner_pos[1] + dy
-    if 0 <= new_x < GRID_WIDTH and 0 <= new_y < GRID_HEIGHT and maze[new_y][new_x] == 0:
-        runner_pos = [new_x, new_y]
-
-    # -------- Catchers Move --------
-    for i in range(3):
-        catchers[i] = move_toward_runner(catchers[i], runner_pos, maze)
-
-    # -------- Boost Pickup --------
-    for b in boosters[:]:
+    # ================= BOOST PICKUP =================
+    for b in boosts[:]:
         if runner_pos == b:
-            boost_active = True
-            boost_timer = 50
-            runner_speed = 2
-            boosters.remove(b)
+            speed = 2
+            boost_timer = BOOST_TIME
+            boosts.remove(b)
 
-    if boost_active:
+    for b in boosts2[:]:
+        if runner_pos == b:
+            speed = 3
+            boost_timer = BOOST_TIME * 1.5
+            boosts2.remove(b)
+
+    if boost_timer > 0:
         boost_timer -= 1
         if boost_timer <= 0:
-            boost_active = False
-            runner_speed = 1
+            speed = 1
 
-    # -------- Win / Lose --------
+    # ================= AI =================
+    for i,c in enumerate(chasers):
+        dist_hod    = math.dist(c, hod_pos)
+        dist_runner = math.dist(c, runner_pos)
+
+        if dist_hod < SAFE_DIST:
+            chasers[i] = move_away(c, hod_pos)
+        else:
+            chasers[i] = move_toward(c, runner_pos)
+
+    # ================= CHECK WIN / LOSE =================
     if runner_pos == gate_pos:
-        print("You Win!")
+        print("🏆 YOU WIN!")
         running = False
 
-    for c in catchers:
+    for c in chasers:
         if runner_pos == c:
-            print("Caught! Game Over.")
+            print("💀 CAUGHT — GAME OVER")
             running = False
 
-    # ================ DRAWING ================
-    screen.fill(COLOR_PATH_BG)
+    # ================= DRAW =================
+    screen.fill(COLOR_BG)
 
-    # Pulsing Title
-    r = int((math.sin(pulse_counter) + 1) * 127)
-    g = int((math.sin(pulse_counter + 2) + 1) * 127)
-    b = int((math.sin(pulse_counter + 4) + 1) * 127)
-    title = font.render("SHRAVANI MEDHA PROJECT", True, (r, g, b))
-    screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 5))
+    # Title neon pulse
+    r = int((math.sin(pulse) + 1) * 120)
+    g = int((math.sin(pulse+1.5) + 1) * 120)
+    b = int((math.sin(pulse+3) + 1) * 140)
+    title = font.render("SHRAVANI MEDHA PROJECT", True,(r,g,b))
+    screen.blit(title,(WIDTH//2-title.get_width()//2,10))
 
-    # Draw Maze
-    for y in range(GRID_HEIGHT):
-        for x in range(GRID_WIDTH):
-            if maze[y][x] == 1:
-                pygame.draw.rect(screen, COLOR_WALL, (x * CELL_SIZE, y * CELL_SIZE + 40, CELL_SIZE, CELL_SIZE))
-            else:
-                pygame.draw.rect(screen, COLOR_PATH_FILL, (x * CELL_SIZE, y * CELL_SIZE + 40, CELL_SIZE, CELL_SIZE))
+    # Maze blocks
+    for y in range(GRID_H):
+        for x in range(GRID_W):
+            pygame.draw.rect(
+                screen,
+                COLOR_WALL if maze[y][x] == 1 else COLOR_FLOOR,
+                (x*CELL, y*CELL+70, CELL, CELL)
+            )
 
-    # Draw elements
-    screen.blit(gate_img, (gate_pos[0] * CELL_SIZE, gate_pos[1] * CELL_SIZE + 40))
-    for b in boosters:
-        screen.blit(boost_img, (b[0] * CELL_SIZE, b[1] * CELL_SIZE + 40))
-    screen.blit(runner_img, (runner_pos[0] * CELL_SIZE, runner_pos[1] * CELL_SIZE + 40))
-    screen.blit(catcher1_img, (catchers[0][0] * CELL_SIZE, catchers[0][1] * CELL_SIZE + 40))
-    screen.blit(catcher_img, (catchers[1][0] * CELL_SIZE, catchers[1][1] * CELL_SIZE + 40))
-    screen.blit(catcher_img, (catchers[2][0] * CELL_SIZE, catchers[2][1] * CELL_SIZE + 40))
+    # Objects
+    screen.blit(gate_img, (gate_pos[0]*CELL, gate_pos[1]*CELL+70))
+    screen.blit(runner_img, (runner_pos[0]*CELL, runner_pos[1]*CELL+70))
+    screen.blit(hod_img, (hod_pos[0]*CELL, hod_pos[1]*CELL+70))
+
+    for c in chasers:
+        screen.blit(boy_img, (c[0]*CELL, c[1]*CELL+70))
+
+    for b in boosts:
+        screen.blit(boost_img, (b[0]*CELL, b[1]*CELL+70))
+    for b in boosts2:
+        screen.blit(boost2_img, (b[0]*CELL, b[1]*CELL+70))
 
     pygame.display.flip()
 
